@@ -135,7 +135,7 @@ pcdata = flip(X_pca)
 groundtruth = flip(y)
 num_class = int(np.max(y))
 
-HalfWidth = 32
+HalfWidth = 16
 Wid = 2 * HalfWidth
 G = groundtruth[nRow - HalfWidth:2 * nRow + HalfWidth, nColumn - HalfWidth:2 * nColumn + HalfWidth]
 data = pcdata[nRow - HalfWidth:2 * nRow + HalfWidth, nColumn - HalfWidth:2 * nColumn + HalfWidth, :]

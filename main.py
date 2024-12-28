@@ -75,43 +75,26 @@ def applyPCA(X, numComponents):
     newX = np.reshape(newX, (X.shape[0], X.shape[1], numComponents))
     return newX
 
-def padWithZeros(X, margin=2):
+def padWithZeros(X, margin=5):
     newX = np.zeros((X.shape[0] + 2 * margin, X.shape[1] + 2 * margin, X.shape[2]))
     newX[margin:X.shape[0] + margin, margin:X.shape[1] + margin, :] = X
     return newX
 
-def createImageCubes(X, y, windowSize=5, removeZeroLabels=True):
+def createImageCubes(X, y, windowSize=11, removeZeroLabels=True):
     margin = int((windowSize - 1) / 2)
     zeroPaddedX = padWithZeros(X, margin=margin)
-    patchesData = np.zeros((X.shape[0] * X.shape[1], windowSize, windowSize, X.shape[2]))
-    patchesLabels = np.zeros((X.shape[0] * X.shape[1]))
-    patchIndex = 0
+    patchesData = []
+    patchesLabels = []
     for r in range(margin, zeroPaddedX.shape[0] - margin):
         for c in range(margin, zeroPaddedX.shape[1] - margin):
             patch = zeroPaddedX[r - margin:r + margin + 1, c - margin:c + margin + 1]
-            patchesData[patchIndex, :, :, :] = patch
-            patchesLabels[patchIndex] = y[r - margin, c - margin]
-            patchIndex = patchIndex + 1
-    if removeZeroLabels:
-        patchesData = patchesData[patchesLabels > 0, :, :, :]
-        patchesLabels = patchesLabels[patchesLabels > 0]
-        patchesLabels -= 1
-    return patchesData, patchesLabels
+            label = y[r-margin, c-margin]
+            if label > 0 or not removeZeroLabels:
+                patchesData.append(patch)
+                patchesLabels.append(label)
+    return np.array(patchesData), np.array(patchesLabels)
 
-def splitTrainTestSet(X, y, testRatio, randomState=345):
-    X_train, X_test, y_train, y_test = X * (1 - testRatio), X * testRatio, y * (1 - testRatio), y * testRatio
-    return X_train, X_test, y_train, y_test
-
-def flip(data):
-    y_4 = np.zeros_like(data)
-    y_1 = y_4
-    y_2 = y_4
-    first = np.concatenate((y_1, y_2, y_1), axis=1)
-    second = np.concatenate((y_4, data, y_4), axis=1)
-    third = first
-    Data = np.concatenate((first, second, third), axis=0)
-    return Data
-
+# Load and preprocess data
 data_dir = os.path.join(os.getcwd(), 'data')
 matfn1 = os.path.join(data_dir, 'Indian_pines_corrected.mat')
 data1 = sio.loadmat(matfn1)
@@ -119,69 +102,49 @@ X = data1['indian_pines_corrected']
 matfn2 = os.path.join(data_dir, 'Indian_pines_gt.mat')
 data2 = sio.loadmat(matfn2)
 y = data2['indian_pines_gt']
-test_ratio = 0.90
-patch_size = 11
+
+# Data parameters
 pca_components = 3
 print("\nData Processing:")
 print(f"- Original data shape: {X.shape}")
 print(f"- Number of classes: {int(np.max(y))}")
 
-# Apply PCA and data augmentation
+# Apply PCA
 X_pca = applyPCA(X, numComponents=pca_components)
-[nRow, nColumn, nBand] = X_pca.shape
 print(f"- Shape after PCA: {X_pca.shape}")
 
-pcdata = flip(X_pca)
-groundtruth = flip(y)
-num_class = int(np.max(y))
+# Create patches
+patches, labels = createImageCubes(X_pca, y, windowSize=11)
+print(f"- Generated patches shape: {patches.shape}")
+print(f"- Labels shape: {labels.shape}")
 
-HalfWidth = 32
-Wid = 2 * HalfWidth
-G = groundtruth[nRow - HalfWidth:2 * nRow + HalfWidth, nColumn - HalfWidth:2 * nColumn + HalfWidth]
-data = pcdata[nRow - HalfWidth:2 * nRow + HalfWidth, nColumn - HalfWidth:2 * nColumn + HalfWidth, :]
-[row, col] = G.shape
+# Adjust labels to start from 0
+labels = labels - 1
+num_class = len(np.unique(labels))
 
-NotZeroMask = np.zeros([row, col])
-Wid = 2 * HalfWidth
-NotZeroMask[HalfWidth + 1: -1 - HalfWidth + 1, HalfWidth + 1: -1 - HalfWidth + 1] = 1
-G = G * NotZeroMask
+# Split into train and test sets
+total_samples = len(patches)
+train_size = min(2000, int(0.7 * total_samples))
+indices = np.random.permutation(total_samples)
+train_indices = indices[:train_size]
+test_indices = indices[train_size:]
 
-[Row, Column] = np.nonzero(G)
-nSample = np.size(Row)
+Xtrain = patches[train_indices]
+ytrain = labels[train_indices]
+Xtest = patches[test_indices]
+ytest = labels[test_indices]
 
-RandPerm = np.random.permutation(nSample)
+# Transpose for PyTorch (N, C, H, W)
+Xtrain = Xtrain.transpose(0, 3, 1, 2).astype('float32')
+Xtest = Xtest.transpose(0, 3, 1, 2).astype('float32')
 
-nTrain = 2000
-nTest = nSample - nTrain
-imdb = {}
-imdb['datas'] = np.zeros([2 * HalfWidth, 2 * HalfWidth, nBand, nTrain + nTest], dtype=np.float32)
-imdb['Labels'] = np.zeros([nTrain + nTest], dtype=np.int64)
-imdb['set'] = np.zeros([nTrain + nTest], dtype=np.int64)
-for iSample in range(nTrain + nTest):
-    imdb['datas'][:, :, :, iSample] = data[Row[RandPerm[iSample]] - HalfWidth: Row[RandPerm[iSample]] + HalfWidth,
-                                     Column[RandPerm[iSample]] - HalfWidth: Column[RandPerm[iSample]] + HalfWidth,
-                                     :]
-    imdb['Labels'][iSample] = G[Row[RandPerm[iSample]],
-                             Column[RandPerm[iSample]]].astype(np.int64)
-print('Data is OK.')
+print("\nFinal data shapes:")
+print(f"- Training data: {Xtrain.shape}")
+print(f"- Training labels: {ytrain.shape}")
+print(f"- Test data: {Xtest.shape}")
+print(f"- Test labels: {ytest.shape}")
 
-imdb['Labels'] = imdb['Labels'] - 1
-
-imdb['set'] = np.hstack((np.ones([nTrain]), 3 * np.ones([nTest]))).astype(np.int64)
-Xtrain = imdb['datas'][:, :, :, :nTrain]
-ytrain = imdb['Labels'][:nTrain]
-print('Xtrain :', Xtrain.shape)
-print('yTrain:', ytrain.shape)
-Xtest = imdb['datas']
-ytest = imdb['Labels']
-print('Xtest :', Xtest.shape)
-print('ytest:', ytest.shape)
-
-Xtrain = Xtrain.transpose(3, 2, 0, 1)
-Xtest = Xtest.transpose(3, 2, 0, 1)
-print('after Xtrain shape:', Xtrain.shape)
-print('after Xtest shape:', Xtest.shape)
-
+# Dataset classes
 class TrainDS(torch.utils.data.Dataset):
     def __init__(self):
         self.len = Xtrain.shape[0]
@@ -205,6 +168,24 @@ class TestDS(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.len
+
+# Create data loaders
+trainset = TrainDS()
+testset = TestDS()
+train_loader = torch.utils.data.DataLoader(
+    dataset=trainset, 
+    batch_size=opt.batchSize,
+    shuffle=True,
+    num_workers=opt.workers,
+    drop_last=True  # Drop last incomplete batch
+)
+test_loader = torch.utils.data.DataLoader(
+    dataset=testset,
+    batch_size=opt.batchSize,
+    shuffle=False,
+    num_workers=opt.workers,
+    drop_last=False  # Keep all test samples
+)
 
 trainset = TrainDS()
 testset = TestDS()

@@ -147,9 +147,9 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.01)
         m.bias.data.fill_(0)
 
-class netG(nn.Module):
+class Generator(nn.Module):
     def __init__(self, nz, ngf, nc):
-        super(netG, self).__init__()
+        super(Generator, self).__init__()
         self.ReLU = nn.LeakyReLU(0.2, inplace=True)
         self.Tanh = nn.Tanh()
         self.conv1 = nn.ConvTranspose2d(nz, ngf * 8, 2, 1, 0, bias=False)
@@ -182,9 +182,9 @@ class netG(nn.Module):
         output = self.Tanh(x)
         return output
 
-class netD(nn.Module):
+class Discriminator(nn.Module):
     def __init__(self, ndf, nc, nb_label):
-        super(netD, self).__init__()
+        super(Discriminator, self).__init__()
         self.LeakyReLU = nn.LeakyReLU(0.2, inplace=True)
         self.conv1 = nn.Conv2d(nc, ndf, 3, 1, 0, bias=False)
         self.BatchNorm1 = nn.BatchNorm2d(ndf)
@@ -285,8 +285,8 @@ def main():
     nc = pca_components
     nb_label = num_class
 
-    netG = netG(nz, ngf, nc)
-    netD = netD(ndf, nc, nb_label)
+    netG = Generator(nz, ngf, nc)
+    netD = Discriminator(ndf, nc, nb_label)
 
     if opt.netG != '':
         netG.load_state_dict(torch.load(opt.netG))

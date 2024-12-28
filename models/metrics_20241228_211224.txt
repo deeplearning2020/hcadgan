@@ -1,0 +1,5 @@
+Epoch: 5
+Test Accuracy: 58.44%
+Average Accuracy: 0.4584
+Kappa: 0.5436
+Train Accuracy: 68.15%

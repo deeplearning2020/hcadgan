@@ -135,7 +135,7 @@ pcdata = flip(X_pca)
 groundtruth = flip(y)
 num_class = int(np.max(y))
 
-HalfWidth = 16
+HalfWidth = 32
 Wid = 2 * HalfWidth
 G = groundtruth[nRow - HalfWidth:2 * nRow + HalfWidth, nColumn - HalfWidth:2 * nColumn + HalfWidth]
 data = pcdata[nRow - HalfWidth:2 * nRow + HalfWidth, nColumn - HalfWidth:2 * nColumn + HalfWidth, :]
@@ -227,25 +227,31 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.01)
         m.bias.data.fill_(0)
 
+HalfWidth = 5  # Since we want 11x11 patches (5 on each side + center pixel)
+Wid = 2 * HalfWidth  # This will be 10
+
+# Modify Generator architecture for 11x11 output
 class netG(nn.Module):
     def __init__(self, nz, ngf, nc):
         super(netG, self).__init__()
         self.ReLU = nn.LeakyReLU(0.2, inplace=True)
         self.Tanh = nn.Tanh()
-        self.conv1 = nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False)
+        
+        # Starting from 1x1 to reach 11x11
+        self.conv1 = nn.ConvTranspose2d(nz, ngf * 8, 2, 1, 0, bias=False)  # 2x2
         self.BatchNorm1 = nn.BatchNorm2d(ngf * 8)
 
-        self.conv2 = nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False)
+        self.conv2 = nn.ConvTranspose2d(ngf * 8, ngf * 4, 3, 1, 0, bias=False)  # 4x4
         self.BatchNorm2 = nn.BatchNorm2d(ngf * 4)
         self.Drop2 = DropBlock2D()
 
-        self.conv3 = nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)
+        self.conv3 = nn.ConvTranspose2d(ngf * 4, ngf * 2, 3, 1, 0, bias=False)  # 6x6
         self.BatchNorm3 = nn.BatchNorm2d(ngf * 2)
 
-        self.conv4 = nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False)
+        self.conv4 = nn.ConvTranspose2d(ngf * 2, ngf, 3, 1, 0, bias=False)  # 8x8
         self.BatchNorm4 = nn.BatchNorm2d(ngf)
 
-        self.conv6 = nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False)
+        self.conv5 = nn.ConvTranspose2d(ngf, nc, 4, 1, 0, bias=False)  # 11x11
 
         self.apply(weights_init)
 
@@ -266,28 +272,36 @@ class netG(nn.Module):
         x = self.conv4(x)
         x = self.BatchNorm4(x)
         x = self.ReLU(x)
-        x = self.conv6(x)
+
+        x = self.conv5(x)
         output = self.Tanh(x)
         return output
 
+# Modify Discriminator architecture for 11x11 input
 class netD(nn.Module):
     def __init__(self, ndf, nc, nb_label):
         super(netD, self).__init__()
         self.LeakyReLU = nn.LeakyReLU(0.2, inplace=True)
 
-        self.conv1 = nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)
+        self.conv1 = nn.Conv2d(nc, ndf, 3, 1, 0, bias=False)  # 9x9
         self.BatchNorm1 = nn.BatchNorm2d(ndf)
-        self.conv2 = nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)
+        
+        self.conv2 = nn.Conv2d(ndf, ndf * 2, 3, 1, 0, bias=False)  # 7x7
         self.BatchNorm2 = nn.BatchNorm2d(ndf * 2)
         self.Drop2 = DropBlock2D()
-        self.conv3 = nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False)
+        
+        self.conv3 = nn.Conv2d(ndf * 2, ndf * 4, 3, 1, 0, bias=False)  # 5x5
         self.BatchNorm3 = nn.BatchNorm2d(ndf * 4)
-        self.conv4 = nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False)
+        
+        self.conv4 = nn.Conv2d(ndf * 4, ndf * 8, 3, 1, 0, bias=False)  # 3x3
         self.BatchNorm4 = nn.BatchNorm2d(ndf * 8)
-        self.conv5 = nn.Conv2d(ndf * 8, ndf * 2, 4, 1, 0, bias=False)
-        self.aux_linear = nn.Linear(ndf * 2, nb_label+1)
+        
+        self.conv5 = nn.Conv2d(ndf * 8, ndf * 2, 3, 1, 0, bias=False)  # 1x1
+        
+        self.aux_linear = nn.Linear(ndf * 2, nb_label + 1)
         self.softmax = nn.LogSoftmax(dim=-1)
         self.ndf = ndf
+        
         self.apply(weights_init)
 
     def forward(self, input):
@@ -302,7 +316,6 @@ class netD(nn.Module):
         x = self.conv3(x)
         x = self.BatchNorm3(x)
         x = self.LeakyReLU(x)
-        x = self.Drop2(x)
 
         x = self.conv4(x)
         x = self.BatchNorm4(x)
